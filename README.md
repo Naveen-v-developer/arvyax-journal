@@ -15,6 +15,7 @@ An AI-powered journaling system for ArvyaX immersive nature sessions. Users writ
 | Cache    | In-process node-cache             |
 | Docker   | Multi-stage builds + Compose      |
 | Deploy   | AWS EC2 (t2.micro free tier)      |
+| CI/CD    | GitHub Actions                    |
 
 ---
 
@@ -31,6 +32,9 @@ Backend   →  http://13.61.196.96:3001/health
 
 ```
 arvyax-journal/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml            # CI/CD pipeline
 ├── backend/
 │   ├── middleware/
 │   │   └── rateLimiter.js        # General + LLM rate limiting
@@ -216,12 +220,91 @@ Data transfer: 100GB/month free
 
 ---
 
+## CI/CD Pipeline (GitHub Actions)
+
+Every push to `main` automatically deploys to AWS EC2.
+
+### How it works
+```
+git push to main
+      │
+      ▼
+GitHub Actions triggers
+      │
+      ▼
+SSH into EC2
+      │
+      ▼
+git pull + docker compose up --build -d
+      │
+      ▼
+Live at http://13.61.196.96
+```
+
+### Pipeline file — `.github/workflows/deploy.yml`
+```yaml
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy via SSH
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          script: |
+            cd ~/arvyax-journal
+            git pull origin main
+            docker compose down
+            docker compose up --build -d
+            docker image prune -f
+            echo "Deployment successful"
+```
+
+### GitHub Secrets required
+
+Go to repo → **Settings** → **Secrets and variables** → **Actions**
+
+| Secret Name | Value |
+|-------------|-------|
+| `EC2_HOST` | `13.61.196.96` |
+| `EC2_USERNAME` | `ubuntu` |
+| `EC2_PRIVATE_KEY` | contents of `arvyax-key.pem` file |
+
+### Trigger a deployment
+```bash
+git add .
+git commit -m "your changes"
+git push
+```
+
+Go to GitHub → **Actions** tab → watch live deployment logs
+
+### Pipeline status
+- Green tick = deployed successfully
+- Red cross = deployment failed, click to see error logs
+
+---
+
 ## Environment Variables
 
 | Variable       | Required | Description                          |
 |----------------|----------|--------------------------------------|
-| `GROQ_API_KEY` | ✅ Yes   | Groq API key from console.groq.com   |
-| `MONGODB_URI`  | ✅ Yes   | MongoDB Atlas connection string      |
+| `GROQ_API_KEY` | Yes      | Groq API key from console.groq.com   |
+| `MONGODB_URI`  | Yes      | MongoDB Atlas connection string      |
 | `PORT`         | No       | Backend port (default: 3001)         |
 | `NODE_ENV`     | No       | development or production            |
 | `FRONTEND_URL` | No       | CORS origin in production            |
@@ -325,10 +408,11 @@ Health check.
 
 ## Bonus Features Implemented
 
-- ✅ LLM response caching — in-memory node-cache (TTL 1 hour) + MongoDB persistence
-- ✅ Rate limiting — general (100 req/15 min) + LLM endpoint (20 req/15 min)
-- ✅ Docker setup — multi-stage builds, health checks
-- ✅ Input validation — all endpoints validate and return clear errors
-- ✅ Cache indicators — UI shows ⚡ when result served from cache
-- ✅ AWS EC2 deployment — Docker Compose on t2.micro free tier
-- ✅ Auto-restart — containers restart automatically on server reboot
+- LLM response caching — in-memory node-cache (TTL 1 hour) + MongoDB persistence
+- Rate limiting — general (100 req/15 min) + LLM endpoint (20 req/15 min)
+- Docker setup — multi-stage builds, health checks
+- Input validation — all endpoints validate and return clear errors
+- Cache indicators — UI shows cached result indicator
+- AWS EC2 deployment — Docker Compose on t2.micro free tier
+- Auto-restart — containers restart automatically on server reboot
+- CI/CD pipeline — GitHub Actions auto deploys on every push to main
