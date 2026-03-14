@@ -1,6 +1,5 @@
 const express = require("express");
-const { v4: uuidv4 } = require("uuid");
-const { getDb } = require("../models/db");
+const { JournalEntry } = require("../models/db");
 const { analyzeEmotion } = require("../services/llmService");
 
 const router = express.Router();
@@ -8,12 +7,11 @@ const router = express.Router();
 const VALID_AMBIENCES = ["forest", "ocean", "mountain", "desert", "meadow"];
 
 // ─── POST /api/journal ────────────────────────────────────────────────────────
-// Create a new journal entry
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const { userId, ambience, text } = req.body;
 
   if (!userId || typeof userId !== "string" || !userId.trim()) {
-    return res.status(400).json({ error: "userId is required and must be a non-empty string." });
+    return res.status(400).json({ error: "userId is required." });
   }
   if (!ambience || !VALID_AMBIENCES.includes(ambience)) {
     return res.status(400).json({
@@ -24,66 +22,26 @@ router.post("/", (req, res) => {
     return res.status(400).json({ error: "text must be at least 5 characters." });
   }
 
-  const db = getDb();
-  const id = uuidv4();
-  const createdAt = new Date().toISOString();
+  try {
+    const entry = await JournalEntry.create({
+      userId: userId.trim(),
+      ambience,
+      text: text.trim(),
+    });
 
-  db.prepare(
-    `INSERT INTO journal_entries (id, user_id, ambience, text, created_at)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(id, userId.trim(), ambience, text.trim(), createdAt);
-
-  return res.status(201).json({
-    id,
-    userId: userId.trim(),
-    ambience,
-    text: text.trim(),
-    createdAt,
-  });
-});
-
-// ─── GET /api/journal/:userId ─────────────────────────────────────────────────
-// Fetch all journal entries for a user, newest first
-router.get("/:userId", (req, res) => {
-  const { userId } = req.params;
-  const { limit = 50, offset = 0 } = req.query;
-
-  if (!userId || !userId.trim()) {
-    return res.status(400).json({ error: "userId is required." });
+    return res.status(201).json({
+      id: entry._id,
+      userId: entry.userId,
+      ambience: entry.ambience,
+      text: entry.text,
+      createdAt: entry.createdAt,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to save entry." });
   }
-
-  const db = getDb();
-
-  const entries = db
-    .prepare(
-      `SELECT
-         je.id,
-         je.user_id   AS userId,
-         je.ambience,
-         je.text,
-         je.created_at AS createdAt,
-         ac.emotion,
-         ac.keywords,
-         ac.summary,
-         ac.analyzed_at AS analyzedAt
-       FROM journal_entries je
-       LEFT JOIN analysis_cache ac ON ac.entry_id = je.id
-       WHERE je.user_id = ?
-       ORDER BY je.created_at DESC
-       LIMIT ? OFFSET ?`
-    )
-    .all(userId.trim(), Number(limit), Number(offset));
-
-  const parsed = entries.map((e) => ({
-    ...e,
-    keywords: e.keywords ? JSON.parse(e.keywords) : null,
-  }));
-
-  return res.json({ entries: parsed, total: parsed.length });
 });
 
 // ─── POST /api/journal/analyze ────────────────────────────────────────────────
-// Analyze a piece of text (or a stored entry) using the LLM
 router.post("/analyze", async (req, res) => {
   const { text, entryId } = req.body;
 
@@ -91,47 +49,32 @@ router.post("/analyze", async (req, res) => {
     return res.status(400).json({ error: "text must be at least 5 characters." });
   }
 
-  const db = getDb();
-
-  // If entryId provided, check if we already have a cached DB result
-  if (entryId) {
-    const cached = db
-      .prepare(`SELECT * FROM analysis_cache WHERE entry_id = ?`)
-      .get(entryId);
-
-    if (cached) {
-      return res.json({
-        emotion: cached.emotion,
-        keywords: JSON.parse(cached.keywords),
-        summary: cached.summary,
-        fromCache: true,
-      });
-    }
-  }
-
   try {
+    // Check DB cache first if entryId provided
+    if (entryId) {
+      const existing = await JournalEntry.findById(entryId);
+      if (existing?.analysis?.emotion) {
+        return res.json({
+          emotion: existing.analysis.emotion,
+          keywords: existing.analysis.keywords,
+          summary: existing.analysis.summary,
+          fromCache: true,
+        });
+      }
+    }
+
     const result = await analyzeEmotion(text.trim());
 
-    // Persist to DB cache if we have an entryId
+    // Save analysis back to the entry
     if (entryId) {
-      // Verify entry exists
-      const entry = db
-        .prepare(`SELECT id FROM journal_entries WHERE id = ?`)
-        .get(entryId);
-
-      if (entry) {
-        db.prepare(
-          `INSERT OR REPLACE INTO analysis_cache (id, entry_id, emotion, keywords, summary, analyzed_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        ).run(
-          uuidv4(),
-          entryId,
-          result.emotion,
-          JSON.stringify(result.keywords),
-          result.summary,
-          new Date().toISOString()
-        );
-      }
+      await JournalEntry.findByIdAndUpdate(entryId, {
+        analysis: {
+          emotion: result.emotion,
+          keywords: result.keywords,
+          summary: result.summary,
+          analyzedAt: new Date(),
+        },
+      });
     }
 
     return res.json({
@@ -150,120 +93,115 @@ router.post("/analyze", async (req, res) => {
 });
 
 // ─── GET /api/journal/insights/:userId ───────────────────────────────────────
-// Aggregate insights for a user's journal history
-router.get("/insights/:userId", (req, res) => {
+router.get("/insights/:userId", async (req, res) => {
   const { userId } = req.params;
 
   if (!userId || !userId.trim()) {
     return res.status(400).json({ error: "userId is required." });
   }
 
-  const db = getDb();
-  const uid = userId.trim();
+  try {
+    const uid = userId.trim();
 
-  const totalRow = db
-    .prepare(`SELECT COUNT(*) as total FROM journal_entries WHERE user_id = ?`)
-    .get(uid);
+    const totalEntries = await JournalEntry.countDocuments({ userId: uid });
 
-  const totalEntries = totalRow.total;
+    if (totalEntries === 0) {
+      return res.json({
+        totalEntries: 0,
+        analyzedEntries: 0,
+        topEmotion: null,
+        mostUsedAmbience: null,
+        recentKeywords: [],
+        emotionBreakdown: [],
+        ambienceBreakdown: [],
+      });
+    }
 
-  if (totalEntries === 0) {
-    return res.json({
-      totalEntries: 0,
-      topEmotion: null,
-      mostUsedAmbience: null,
-      recentKeywords: [],
-      analyzedEntries: 0,
-      emotionBreakdown: [],
-      ambienceBreakdown: [],
+    // Analyzed entries count
+    const analyzedEntries = await JournalEntry.countDocuments({
+      userId: uid,
+      "analysis.emotion": { $exists: true },
     });
+
+    // Top emotion
+    const emotionAgg = await JournalEntry.aggregate([
+      { $match: { userId: uid, "analysis.emotion": { $exists: true } } },
+      { $group: { _id: "$analysis.emotion", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Most used ambience
+    const ambienceAgg = await JournalEntry.aggregate([
+      { $match: { userId: uid } },
+      { $group: { _id: "$ambience", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Recent keywords from last 10 analyzed entries
+    const recentEntries = await JournalEntry.find({
+      userId: uid,
+      "analysis.keywords": { $exists: true },
+    })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .select("analysis.keywords");
+
+    const recentKeywords = [
+      ...new Set(recentEntries.flatMap((e) => e.analysis.keywords)),
+    ].slice(0, 10);
+
+    return res.json({
+      totalEntries,
+      analyzedEntries,
+      topEmotion: emotionAgg[0]?._id ?? null,
+      mostUsedAmbience: ambienceAgg[0]?._id ?? null,
+      recentKeywords,
+      emotionBreakdown: emotionAgg.map((e) => ({
+        emotion: e._id,
+        count: e.count,
+      })),
+      ambienceBreakdown: ambienceAgg.map((a) => ({
+        ambience: a._id,
+        count: a.count,
+      })),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch insights." });
+  }
+});
+
+// ─── GET /api/journal/:userId ─────────────────────────────────────────────────
+// MUST be last — wildcard would swallow /analyze and /insights
+router.get("/:userId", async (req, res) => {
+  const { userId } = req.params;
+  const { limit = 50, offset = 0 } = req.query;
+
+  if (!userId || !userId.trim()) {
+    return res.status(400).json({ error: "userId is required." });
   }
 
-  // Top emotion from analyzed entries
-  const topEmotionRow = db
-    .prepare(
-      `SELECT ac.emotion, COUNT(*) as cnt
-       FROM analysis_cache ac
-       JOIN journal_entries je ON je.id = ac.entry_id
-       WHERE je.user_id = ?
-       GROUP BY ac.emotion
-       ORDER BY cnt DESC
-       LIMIT 1`
-    )
-    .get(uid);
+  try {
+    const entries = await JournalEntry.find({ userId: userId.trim() })
+      .sort({ createdAt: -1 })
+      .skip(Number(offset))
+      .limit(Number(limit));
 
-  // Most used ambience
-  const topAmbienceRow = db
-    .prepare(
-      `SELECT ambience, COUNT(*) as cnt
-       FROM journal_entries
-       WHERE user_id = ?
-       GROUP BY ambience
-       ORDER BY cnt DESC
-       LIMIT 1`
-    )
-    .get(uid);
+    const formatted = entries.map((e) => ({
+      id: e._id,
+      userId: e.userId,
+      ambience: e.ambience,
+      text: e.text,
+      createdAt: e.createdAt,
+      emotion: e.analysis?.emotion ?? null,
+      keywords: e.analysis?.keywords ?? null,
+      summary: e.analysis?.summary ?? null,
+      analyzedAt: e.analysis?.analyzedAt ?? null,
+    }));
 
-  // Recent keywords (from last 10 analyzed entries)
-  const recentAnalyses = db
-    .prepare(
-      `SELECT ac.keywords
-       FROM analysis_cache ac
-       JOIN journal_entries je ON je.id = ac.entry_id
-       WHERE je.user_id = ?
-       ORDER BY je.created_at DESC
-       LIMIT 10`
-    )
-    .all(uid);
-
-  const recentKeywords = [
-    ...new Set(
-      recentAnalyses.flatMap((r) => JSON.parse(r.keywords))
-    ),
-  ].slice(0, 10);
-
-  // Emotion breakdown
-  const emotionBreakdown = db
-    .prepare(
-      `SELECT ac.emotion, COUNT(*) as count
-       FROM analysis_cache ac
-       JOIN journal_entries je ON je.id = ac.entry_id
-       WHERE je.user_id = ?
-       GROUP BY ac.emotion
-       ORDER BY count DESC`
-    )
-    .all(uid);
-
-  // Ambience breakdown
-  const ambienceBreakdown = db
-    .prepare(
-      `SELECT ambience, COUNT(*) as count
-       FROM journal_entries
-       WHERE user_id = ?
-       GROUP BY ambience
-       ORDER BY count DESC`
-    )
-    .all(uid);
-
-  // Count analyzed entries
-  const analyzedRow = db
-    .prepare(
-      `SELECT COUNT(*) as cnt
-       FROM analysis_cache ac
-       JOIN journal_entries je ON je.id = ac.entry_id
-       WHERE je.user_id = ?`
-    )
-    .get(uid);
-
-  return res.json({
-    totalEntries,
-    analyzedEntries: analyzedRow.cnt,
-    topEmotion: topEmotionRow?.emotion ?? null,
-    mostUsedAmbience: topAmbienceRow?.ambience ?? null,
-    recentKeywords,
-    emotionBreakdown,
-    ambienceBreakdown,
-  });
+    return res.json({ entries: formatted, total: formatted.length });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to fetch entries." });
+  }
 });
 
 module.exports = router;

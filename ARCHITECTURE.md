@@ -60,11 +60,11 @@
 | analyzed_at | TEXT | ISO-8601 timestamp                           |
 
 **Design choices:**
-- One-to-one relationship between entry and analysis (an entry's text never changes)
-- Keywords stored as JSON string in SQLite (avoids a third join table for a read-heavy pattern)
-- WAL mode enabled for concurrent reads during aggregation queries
-
----
+- Analysis is embedded inside the entry document — a single read returns the entry and its analysis together with no joins needed
+- MongoDB Atlas handles indexing, replication, and backups automatically
+- Mongoose schema enforces enum validation on the ambience field
+- Index on `userId + createdAt` for fast paginated user-scoped queries
+- No separate cache collection needed — analysis lives directly with the entry
 
 ## 1. How Would You Scale This to 100,000 Users?
 
