@@ -1,3 +1,4 @@
+```markdown
 # 🌿 ArvyaX — AI-Assisted Nature Journal
 
 An AI-powered journaling system for ArvyaX immersive nature sessions. Users write about their forest, ocean, or mountain experiences; the system stores entries, analyzes emotions via LLM, and surfaces mental wellness insights over time.
@@ -14,10 +15,21 @@ An AI-powered journaling system for ArvyaX immersive nature sessions. Users writ
 | LLM      | Groq API (llama-3.1-8b-instant)   |
 | Cache    | In-process node-cache             |
 | Docker   | Multi-stage builds + Compose      |
+| Deploy   | AWS EC2 (t2.micro free tier)      |
+
+---
+
+## Live Demo
+
+```
+Frontend  →  http://13.61.196.96
+Backend   →  http://13.61.196.96:3001/health
+```
 
 ---
 
 ## Project Structure
+
 ```
 arvyax-journal/
 ├── backend/
@@ -88,7 +100,8 @@ Open [http://localhost:5173](http://localhost:5173)
 
 ---
 
-## Docker (Recommended)
+## Docker (Local)
+
 ```bash
 # Copy and fill in your keys
 cp .env.example .env
@@ -99,6 +112,108 @@ docker compose up --build
 
 - Frontend → [http://localhost](http://localhost)
 - Backend  → [http://localhost:3001](http://localhost:3001)
+
+---
+
+## AWS EC2 Deployment (Docker Compose)
+
+### Prerequisites
+- AWS Account (free tier)
+- EC2 instance: `t2.micro` + `Ubuntu 22.04`
+- Ports open in Security Group: `22`, `80`, `3001`
+
+### Step 1 — Connect to EC2
+```bash
+# Fix key permissions (Windows)
+icacls "C:\Users\yourname\Desktop\arvyax-key.pem" /inheritance:r /grant:r "%username%:R"
+
+# SSH into EC2
+ssh -i "C:\Users\yourname\Desktop\arvyax-key.pem" ubuntu@YOUR_EC2_PUBLIC_IP
+```
+
+### Step 2 — Install Docker on EC2
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# Add user to docker group
+sudo usermod -aG docker ubuntu
+
+# Fix socket permission
+sudo chmod 666 /var/run/docker.sock
+
+# Verify
+docker --version
+docker compose version
+```
+
+### Step 3 — Clone repo and configure
+```bash
+git clone https://github.com/Naveen-v-developer/arvyax-journal.git
+cd arvyax-journal
+
+# Create .env file
+nano .env
+```
+
+Paste inside:
+```env
+GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxx
+MONGODB_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/arvyax?retryWrites=true&w=majority
+```
+Save: `Ctrl+X` → `Y` → `Enter`
+
+### Step 4 — Deploy
+```bash
+docker compose up --build -d
+```
+
+### Step 5 — Verify
+```bash
+# Check containers
+docker ps
+
+# Test backend
+curl http://localhost:3001/health
+```
+
+### Step 6 — Open in browser
+```
+Frontend  →  http://YOUR_EC2_PUBLIC_IP
+Backend   →  http://YOUR_EC2_PUBLIC_IP:3001/health
+```
+
+### Useful commands
+```bash
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+
+# Restart
+docker compose restart
+
+# Update after code change
+git pull
+docker compose up --build -d
+```
+
+### AWS Free Tier Limits
+```
+Instance:      t2.micro — 750 hours/month free (12 months)
+Storage:       30GB free
+Data transfer: 100GB/month free
+```
+
+### Keep IP permanent (optional)
+1. Go to AWS Console → EC2 → **Elastic IPs**
+2. Click **Allocate Elastic IP**
+3. Click **Associate** → select your instance
+4. Your public IP will never change — free of charge
 
 ---
 
@@ -216,3 +331,6 @@ Health check.
 - ✅ Docker setup — multi-stage builds, health checks
 - ✅ Input validation — all endpoints validate and return clear errors
 - ✅ Cache indicators — UI shows ⚡ when result served from cache
+- ✅ AWS EC2 deployment — Docker Compose on t2.micro free tier
+- ✅ Auto-restart — containers restart automatically on server reboot
+```
