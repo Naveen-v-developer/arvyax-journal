@@ -1,0 +1,151 @@
+:root {
+  --bg: #0d1208;
+  --bg2: #141a0e;
+  --surface: #1c2414;
+  --surface2: #243018;
+  --border: #2e3d1e;
+  --accent: #8fbe5a;
+  --accent2: #c4e88a;
+  --accent-dim: rgba(143, 190, 90, 0.15);
+  --text: #e8f0d8;
+  --text2: #9aaa7a;
+  --text3: #5a6a48;
+  --danger: #e07070;
+  --ocean: #5ab4be;
+  --mountain: #9488d4;
+  --desert: #d4a45a;
+  --meadow: #7ad47a;
+  --forest: #8fbe5a;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "DM Sans", sans-serif;
+  --radius: 12px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.65;
+  min-height: 100vh;
+}
+
+/* Noise texture overlay */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 999;
+  opacity: 0.5;
+}
+
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.2s;
+}
+
+textarea, input, select {
+  font-family: var(--font-body);
+  outline: none;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  border-radius: var(--radius);
+  transition: border-color 0.2s;
+}
+
+textarea:focus, input:focus, select:focus {
+  border-color: var(--accent);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 500;
+  padding: 10px 22px;
+  border-radius: 100px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+.btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text2);
+  padding: 8px 16px;
+  border-radius: 100px;
+  font-size: 14px;
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.tag {
+  display: inline-block;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid rgba(143,190,90,0.2);
+  border-radius: 100px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.emotion-tag {
+  display: inline-block;
+  border-radius: 100px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+  background: rgba(143,190,90,0.2);
+  color: var(--accent2);
+}
+
+.ambience-forest  { color: var(--forest); }
+.ambience-ocean   { color: var(--ocean); }
+.ambience-mountain{ color: var(--mountain); }
+.ambience-desert  { color: var(--desert); }
+.ambience-meadow  { color: var(--meadow); }
+
+.error-msg {
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fadeIn 0.3s ease forwards; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid rgba(143,190,90,0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
