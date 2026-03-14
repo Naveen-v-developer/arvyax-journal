@@ -1,4 +1,3 @@
-```markdown
 # 🌿 ArvyaX — AI-Assisted Nature Journal
 
 An AI-powered journaling system for ArvyaX immersive nature sessions. Users write about their forest, ocean, or mountain experiences; the system stores entries, analyzes emotions via LLM, and surfaces mental wellness insights over time.
@@ -333,4 +332,3 @@ Health check.
 - ✅ Cache indicators — UI shows ⚡ when result served from cache
 - ✅ AWS EC2 deployment — Docker Compose on t2.micro free tier
 - ✅ Auto-restart — containers restart automatically on server reboot
-```
