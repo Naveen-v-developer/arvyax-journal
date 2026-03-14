@@ -64,7 +64,7 @@ arvyax-journal/
 
 ### 1. Clone & configure
 ```bash
-git clone https://github.com/YOUR_USERNAME/arvyax-journal.git
+git clone https://github.com/Naveen-v-developer/arvyax-journal.git
 cd arvyax-journal
 ```
 
